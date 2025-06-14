@@ -8,9 +8,9 @@ Installing a package:
 pakt install vim
 ```
 
-Installing a package using other package manager:
+Installing a package using other package manager (flatpak):
 ```
-pakt install -m flatpak chromium
+pakt install -f chromium
 ```
 
 For a the complete list of commands, run `pakt --help`.
