@@ -23,10 +23,10 @@ func main() {
 		Name:  "pakt",
 		Usage: "track and sync packages",
 		Flags: []cli.Flag{
-			&cli.StringFlag{
-				Name:    "package-manager",
-				Aliases: []string{"m"},
-				Usage:   "specify package manager, automatically uses system package manager if left empty",
+			&cli.BoolFlag{
+				Name:    "flatpak",
+				Aliases: []string{"f"},
+				Usage:   "set package manager to flatpak",
 			},
 		},
 		Commands: []*cli.Command{
@@ -211,10 +211,13 @@ func getCommand(action string, packageManager string) string {
 }
 
 func runCommand(app *cli.Command) error {
-	packageName := app.Args().Get(0)
-	packageManager := app.String("package-manager")
+	var packageManager string
 
-	if packageManager == "" {
+	packageName := app.Args().Get(0)
+
+	if app.Bool("flatpak") {
+		packageManager = "flatpak"
+	} else {
 		packageManager = getPackageManager()
 	}
 
