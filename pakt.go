@@ -92,21 +92,23 @@ func sync() error {
 	}
 
 	for packageManager, packages := range data.PackageManagers {
+		var commandParts []string
+
 		command := getCommand("install", packageManager)
 
+		commandParts = strings.Fields(command)
+
 		for _, packageName := range packages {
-			commandParts := strings.Fields(command)
-
 			commandParts = append(commandParts, packageName)
-
-			cmd := exec.Command(commandParts[0], commandParts[1:]...)
-
-			cmd.Stdin = os.Stdin
-			cmd.Stdout = os.Stdout
-			cmd.Stderr = os.Stderr
-
-			_ = cmd.Run()
 		}
+
+		cmd := exec.Command(commandParts[0], commandParts[1:]...)
+
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+
+		_ = cmd.Run()
 	}
 
 	return nil

@@ -13,6 +13,11 @@ Installing a package using other package manager (flatpak):
 pakt install -f chromium
 ```
 
+Sync from package.json file:
+```
+pakt sync
+```
+
 For a the complete list of commands, run `pakt --help`.
 
 ## Installation
