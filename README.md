@@ -20,6 +20,8 @@ pakt sync
 
 For a the complete list of commands, run `pakt --help`.
 
+Packages installed using pakt is tracked in `$HOME/.config/pakt`.
+
 ## Installation
 
 1. Clone the repository.

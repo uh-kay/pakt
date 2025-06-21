@@ -115,9 +115,7 @@ func sync() error {
 }
 
 func writeToFile(packageManager string, packageName string) {
-	data := Data{
-		PackageManagers: make(map[string][]string),
-	}
+	var data Data
 
 	filename, err := getPackageFilePath()
 	if err != nil {
@@ -127,6 +125,10 @@ func writeToFile(packageManager string, packageName string) {
 	fileData, err := os.ReadFile(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
+			data = Data{
+				PackageManagers: make(map[string][]string),
+			}
+
 			data.PackageManagers[packageManager] = append(data.PackageManagers[packageManager], packageName)
 
 			jsonData, err := json.MarshalIndent(data, "", "    ")
@@ -205,7 +207,7 @@ func getCommand(action string, packageManager string) string {
 	case "dnf":
 		command = "sudo " + packageManager + " " + action
 
-	case "flatpak", "f":
+	case "flatpak":
 		command = "flatpak " + " " + action
 	}
 
@@ -235,9 +237,17 @@ func runCommand(app *cli.Command) error {
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
 
-	_ = cmd.Run()
+	err := cmd.Run()
+	if err != nil {
+		return err
+	}
 
-	writeToFile(packageManager, packageName)
+	switch app.Name {
+	case "install":
+		writeToFile(packageManager, packageName)
+	case "remove":
+	case "update":
+	}
 
 	return nil
 }
