@@ -185,16 +185,19 @@ func writeToFile(packageManager string, packageName string) {
 func getPackageManager() string {
 	var packageManager string
 
-	cmd := exec.Command("sh", "-c", `cat /etc/os-release | grep -oP 'NAME="\K[^"]*'`)
+	cmd := exec.Command("sh", "-c", `grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '\n'`)
 	output, err := cmd.Output()
 	if err != nil {
 		log.Fatal(err)
 	}
-	distroName := strings.Split(string(output), " ")[0]
+
+	distroName := string(output[:])
 
 	switch distroName {
-	case "Fedora":
+	case "fedora":
 		packageManager = "dnf"
+	case "ubuntu", "linuxmint":
+		packageManager = "apt"
 	}
 
 	return packageManager
@@ -209,6 +212,16 @@ func getCommand(action string, packageManager string) string {
 
 	case "flatpak":
 		command = "flatpak " + " " + action
+
+	case "apt":
+		switch action {
+		case "install":
+			command = "sudo " + packageManager + " " + action
+		case "remove":
+			command = "sudo " + packageManager + " " + action
+		case "update":
+			command = "sudo " + packageManager + " " + action + " && " + "sudo " + packageManager + " " + "upgrade"
+		}
 	}
 
 	return command
@@ -226,13 +239,8 @@ func runCommand(app *cli.Command) error {
 	}
 
 	command := getCommand(app.Name, packageManager)
-	commandParts := strings.Fields(command)
 
-	if !(app.Name == "update" && packageName == "") {
-		commandParts = append(commandParts, packageName)
-	}
-
-	cmd := exec.Command(commandParts[0], commandParts[1:]...)
+	cmd := exec.Command("sh", "-c", command+" "+packageName)
 	cmd.Stdin = os.Stdin
 	cmd.Stderr = os.Stderr
 	cmd.Stdout = os.Stdout
