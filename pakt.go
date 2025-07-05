@@ -28,6 +28,11 @@ func main() {
 				Aliases: []string{"f"},
 				Usage:   "set package manager to flatpak",
 			},
+			&cli.BoolFlag{
+				Name:    "update-all",
+				Aliases: []string{"a"},
+				Usage:   "update all packages",
+			},
 		},
 		Commands: []*cli.Command{
 			{
@@ -94,7 +99,7 @@ func sync() error {
 	for packageManager, packages := range data.PackageManagers {
 		var commandParts []string
 
-		command := getCommand("install", packageManager)
+		command := getCommand("install", []string{packageManager})
 
 		commandParts = strings.Fields(command)
 
@@ -114,7 +119,7 @@ func sync() error {
 	return nil
 }
 
-func writeToFile(packageManager string, packageName string) {
+func writeToFile(packageManager []string, packageName string) {
 	var data Data
 
 	filename, err := getPackageFilePath()
@@ -129,7 +134,7 @@ func writeToFile(packageManager string, packageName string) {
 				PackageManagers: make(map[string][]string),
 			}
 
-			data.PackageManagers[packageManager] = append(data.PackageManagers[packageManager], packageName)
+			data.PackageManagers[packageManager[0]] = append(data.PackageManagers[packageManager[0]], packageName)
 
 			jsonData, err := json.MarshalIndent(data, "", "    ")
 			if err != nil {
@@ -165,11 +170,11 @@ func writeToFile(packageManager string, packageName string) {
 		fmt.Println("Error parsing JSON:", err)
 	}
 
-	if slices.Contains(data.PackageManagers[packageManager], packageName) {
+	if slices.Contains(data.PackageManagers[packageManager[0]], packageName) {
 		return
 	}
 
-	data.PackageManagers[packageManager] = append(data.PackageManagers[packageManager], packageName)
+	data.PackageManagers[packageManager[0]] = append(data.PackageManagers[packageManager[0]], packageName)
 
 	jsonData, err := json.MarshalIndent(data, "", "    ")
 	if err != nil {
@@ -182,8 +187,8 @@ func writeToFile(packageManager string, packageName string) {
 	}
 }
 
-func getPackageManager() string {
-	var packageManager string
+func getPackageManager() []string {
+	var packageManager []string
 
 	cmd := exec.Command("sh", "-c", `grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '\n'`)
 	output, err := cmd.Output()
@@ -195,20 +200,27 @@ func getPackageManager() string {
 
 	switch distroName {
 	case "fedora":
-		packageManager = "dnf"
+		packageManager = []string{"dnf"}
 	case "ubuntu", "linuxmint":
-		packageManager = "apt"
+		packageManager = []string{"apt"}
 	}
 
 	return packageManager
 }
 
-func getCommand(action string, packageManager string) string {
+func getCommand(action string, packageManager []string) string {
 	var command string
 
-	switch packageManager {
+	fmt.Println(packageManager)
+
+	if len(packageManager) > 1 {
+		command = "sudo " + packageManager[0] + " " + action + " && " + packageManager[1] + " " + action
+		return command
+	}
+
+	switch packageManager[0] {
 	case "dnf":
-		command = "sudo " + packageManager + " " + action
+		command = "sudo " + packageManager[0] + " " + action
 
 	case "flatpak":
 		command = "flatpak " + " " + action
@@ -216,11 +228,11 @@ func getCommand(action string, packageManager string) string {
 	case "apt":
 		switch action {
 		case "install":
-			command = "sudo " + packageManager + " " + action
+			command = "sudo " + packageManager[0] + " " + action
 		case "remove":
-			command = "sudo " + packageManager + " " + action
+			command = "sudo " + packageManager[0] + " " + action
 		case "update":
-			command = "sudo " + packageManager + " " + action + " && " + "sudo " + packageManager + " " + "upgrade"
+			command = "sudo " + packageManager[0] + " " + action + " && " + "sudo " + packageManager[0] + " " + "upgrade"
 		}
 	}
 
@@ -228,12 +240,15 @@ func getCommand(action string, packageManager string) string {
 }
 
 func runCommand(app *cli.Command) error {
-	var packageManager string
+	var packageManager []string
 
 	packageName := app.Args().Get(0)
 
 	if app.Bool("flatpak") {
-		packageManager = "flatpak"
+		packageManager = []string{"flatpak"}
+	} else if app.Bool("update-all") {
+		packageManager = append(getPackageManager(), "flatpak")
+		fmt.Println(packageManager)
 	} else {
 		packageManager = getPackageManager()
 	}
