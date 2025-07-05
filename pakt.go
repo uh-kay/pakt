@@ -211,10 +211,15 @@ func getPackageManager() []string {
 func getCommand(action string, packageManager []string) string {
 	var command string
 
-	fmt.Println(packageManager)
-
 	if len(packageManager) > 1 {
-		command = "sudo " + packageManager[0] + " " + action + " && " + packageManager[1] + " " + action
+		var commandPart string
+		switch packageManager[0] {
+		case "dnf":
+			commandPart = "sudo " + packageManager[0] + " " + action
+		case "apt":
+			commandPart = "sudo " + packageManager[0] + " " + action + " && " + "sudo " + packageManager[0] + " " + "upgrade"
+		}
+		command = commandPart + " && " + packageManager[1] + " " + action
 		return command
 	}
 
@@ -248,7 +253,6 @@ func runCommand(app *cli.Command) error {
 		packageManager = []string{"flatpak"}
 	} else if app.Bool("update-all") {
 		packageManager = append(getPackageManager(), "flatpak")
-		fmt.Println(packageManager)
 	} else {
 		packageManager = getPackageManager()
 	}
