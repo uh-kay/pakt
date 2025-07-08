@@ -217,7 +217,11 @@ func getCommand(action string, packageManager []string) string {
 		case "dnf":
 			commandPart = "sudo " + packageManager[0] + " " + action
 		case "apt":
-			commandPart = "sudo " + packageManager[0] + " " + action + " && " + "sudo " + packageManager[0] + " " + "upgrade"
+			if action == "update" {
+				commandPart = "sudo " + packageManager[0] + " " + action + " && " + "sudo " + packageManager[0] + " " + "upgrade"
+			} else {
+				commandPart = "sudo " + packageManager[0] + " " + action
+			}
 		}
 		command = commandPart + " && " + packageManager[1] + " " + action
 		return command
