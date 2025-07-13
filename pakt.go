@@ -18,6 +18,51 @@ type Data struct {
 	PackageManagers map[string][]string `json:"package_managers"`
 }
 
+type PackageManager struct {
+	name      string
+	commands  map[string]string
+	needsSudo bool
+}
+
+var packageManagers = map[string]PackageManager{
+	"dnf": {
+		name:      "dnf",
+		needsSudo: true,
+		commands: map[string]string{
+			"install": "install",
+			"remove":  "remove",
+			"update":  "update",
+		},
+	},
+	"apt": {
+		name:      "apt",
+		needsSudo: true,
+		commands: map[string]string{
+			"install": "install",
+			"remove":  "remove",
+			"update":  "update && sudo apt upgrade",
+		},
+	},
+	"pacman": {
+		name:      "pacman",
+		needsSudo: true,
+		commands: map[string]string{
+			"install": "-S",
+			"remove":  "-R",
+			"update":  "-Syu",
+		},
+	},
+	"flatpak": {
+		name:      "flatpak",
+		needsSudo: false,
+		commands: map[string]string{
+			"install": "install",
+			"remove":  "remove",
+			"update":  "update",
+		},
+	},
+}
+
 func main() {
 	app := &cli.Command{
 		Name:  "pakt",
@@ -36,22 +81,25 @@ func main() {
 		},
 		Commands: []*cli.Command{
 			{
-				Name:  "install",
-				Usage: "install a package",
+				Name:    "install",
+				Aliases: []string{"i"},
+				Usage:   "install a package",
 				Action: func(c context.Context, app *cli.Command) error {
 					return runCommand(app)
 				},
 			},
 			{
-				Name:  "remove",
-				Usage: "remove a package",
+				Name:    "remove",
+				Usage:   "remove a package",
+				Aliases: []string{"r"},
 				Action: func(c context.Context, app *cli.Command) error {
 					return runCommand(app)
 				},
 			},
 			{
-				Name:  "update",
-				Usage: "update a package",
+				Name:    "update",
+				Usage:   "update a package",
+				Aliases: []string{"u"},
 				Action: func(c context.Context, app *cli.Command) error {
 					return runCommand(app)
 				},
@@ -72,237 +120,248 @@ func main() {
 }
 
 func sync() error {
+	data, err := loadPackageData()
+	if err != nil {
+		return err
+	}
+
+	for packageManagerName, packages := range data.PackageManagers {
+		if len(packages) == 0 {
+			continue
+		}
+
+		command := getCommand("install", []string{packageManagerName})
+		if command == "" {
+			fmt.Printf("Unknown package manager: %s\n", packageManagerName)
+			continue
+		}
+
+		commandParts := append(strings.Fields(command), packages...)
+
+		if err := executeCommand(commandParts); err != nil {
+			fmt.Printf("Error installing packages with %s: %v\n", packageManagerName, err)
+		}
+	}
+
+	return nil
+}
+
+func loadPackageData() (*Data, error) {
 	filename, err := getPackageFilePath()
 	if err != nil {
-		fmt.Println("Error getting package file path:", err)
+		return nil, fmt.Errorf("getting package file path: %w", err)
 	}
 
 	fileData, err := os.ReadFile(filename)
 	if err != nil {
 		if os.IsNotExist(err) {
 			fmt.Println("Cannot sync: package.json not found")
-
-			return nil
+			return &Data{PackageManagers: make(map[string][]string)}, nil
 		}
-
-		fmt.Println("Error reading file:", err)
-
-		return nil
+		return nil, fmt.Errorf("reading file: %w", err)
 	}
 
 	var data Data
-	err = json.Unmarshal(fileData, &data)
-	if err != nil {
-		fmt.Println("Error parsing JSON:", err)
+	if err := json.Unmarshal(fileData, &data); err != nil {
+		return nil, fmt.Errorf("parsing JSON: %w", err)
 	}
 
-	for packageManager, packages := range data.PackageManagers {
-		var commandParts []string
+	return &data, nil
+}
 
-		command := getCommand("install", []string{packageManager})
+func savePackageData(data *Data) error {
+	filename, err := getPackageFilePath()
+	if err != nil {
+		return fmt.Errorf("getting package file path: %w", err)
+	}
 
-		commandParts = strings.Fields(command)
+	jsonData, err := json.MarshalIndent(data, "", "    ")
+	if err != nil {
+		return fmt.Errorf("marshaling JSON: %w", err)
+	}
 
-		for _, packageName := range packages {
-			commandParts = append(commandParts, packageName)
-		}
+	// Ensure directory exists
+	if err := os.MkdirAll(filepath.Dir(filename), 0755); err != nil {
+		return fmt.Errorf("creating directory: %w", err)
+	}
 
-		cmd := exec.Command(commandParts[0], commandParts[1:]...)
-
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-
-		_ = cmd.Run()
+	if err := os.WriteFile(filename, jsonData, 0644); err != nil {
+		return fmt.Errorf("writing file: %w", err)
 	}
 
 	return nil
 }
 
-func writeToFile(packageManager []string, packageName string) {
-	var data Data
-
-	filename, err := getPackageFilePath()
-	if err != nil {
-		fmt.Println("Error getting package file path:", err)
-	}
-
-	fileData, err := os.ReadFile(filename)
-	if err != nil {
-		if os.IsNotExist(err) {
-			data = Data{
-				PackageManagers: make(map[string][]string),
-			}
-
-			data.PackageManagers[packageManager[0]] = append(data.PackageManagers[packageManager[0]], packageName)
-
-			jsonData, err := json.MarshalIndent(data, "", "    ")
-			if err != nil {
-				fmt.Println("Error marshaling JSON:", err)
-			}
-
-			homeDir, err := os.UserHomeDir()
-			if err != nil {
-				panic(err)
-			}
-
-			configDir := filepath.Join(homeDir, ".config", "pakt")
-			filename := filepath.Join(configDir, "package.json")
-
-			err = os.MkdirAll(configDir, 0755)
-			if err != nil {
-				panic(err)
-			}
-
-			err = os.WriteFile(filename, jsonData, 0644)
-			if err != nil {
-				fmt.Println("Error writing file:", err)
-			}
-
-			return
-		}
-
-		fmt.Println("Error reading file:", err)
-	}
-
-	err = json.Unmarshal(fileData, &data)
-	if err != nil {
-		fmt.Println("Error parsing JSON:", err)
-	}
-
-	if slices.Contains(data.PackageManagers[packageManager[0]], packageName) {
-		return
-	}
-
-	data.PackageManagers[packageManager[0]] = append(data.PackageManagers[packageManager[0]], packageName)
-
-	jsonData, err := json.MarshalIndent(data, "", "    ")
-	if err != nil {
-		fmt.Println("Error:", err)
-	}
-
-	err = os.WriteFile(filename, jsonData, 0644)
-	if err != nil {
-		fmt.Println("Error writing file:", err)
-	}
-}
-
-func getPackageManager() []string {
-	var packageManager []string
-
-	cmd := exec.Command("sh", "-c", `grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '\n'`)
-	output, err := cmd.Output()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	distroName := string(output[:])
-
-	switch distroName {
-	case "fedora":
-		packageManager = []string{"dnf"}
-	case "ubuntu", "linuxmint":
-		packageManager = []string{"apt"}
-	}
-
-	return packageManager
-}
-
-func getCommand(action string, packageManager []string) string {
-	var command string
-
-	if len(packageManager) > 1 {
-		var commandPart string
-		switch packageManager[0] {
-		case "dnf":
-			commandPart = "sudo " + packageManager[0] + " " + action
-		case "apt":
-			if action == "update" {
-				commandPart = "sudo " + packageManager[0] + " " + action + " && " + "sudo " + packageManager[0] + " " + "upgrade"
-			} else {
-				commandPart = "sudo " + packageManager[0] + " " + action
-			}
-		}
-		command = commandPart + " && " + packageManager[1] + " " + action
-		return command
-	}
-
-	switch packageManager[0] {
-	case "dnf":
-		command = "sudo " + packageManager[0] + " " + action
-
-	case "flatpak":
-		command = "flatpak " + " " + action
-
-	case "apt":
-		switch action {
-		case "install":
-			command = "sudo " + packageManager[0] + " " + action
-		case "remove":
-			command = "sudo " + packageManager[0] + " " + action
-		case "update":
-			command = "sudo " + packageManager[0] + " " + action + " && " + "sudo " + packageManager[0] + " " + "upgrade"
-		}
-	}
-
-	return command
-}
-
-func runCommand(app *cli.Command) error {
-	var packageManager []string
-
-	packageName := app.Args().Get(0)
-
-	if app.Bool("flatpak") {
-		packageManager = []string{"flatpak"}
-	} else if app.Bool("update-all") {
-		packageManager = append(getPackageManager(), "flatpak")
-	} else {
-		packageManager = getPackageManager()
-	}
-
-	command := getCommand(app.Name, packageManager)
-
-	cmd := exec.Command("sh", "-c", command+" "+packageName)
-	cmd.Stdin = os.Stdin
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-
-	err := cmd.Run()
+func addPackageToFile(packageManagerName, packageName string) error {
+	data, err := loadPackageData()
 	if err != nil {
 		return err
 	}
 
+	if data.PackageManagers == nil {
+		data.PackageManagers = make(map[string][]string)
+	}
+
+	// Check if package already exists
+	if slices.Contains(data.PackageManagers[packageManagerName], packageName) {
+		return nil
+	}
+
+	data.PackageManagers[packageManagerName] = append(
+		data.PackageManagers[packageManagerName],
+		packageName,
+	)
+
+	return savePackageData(data)
+}
+
+func removePackageFromFile(packageManagerName, packageName string) error {
+	data, err := loadPackageData()
+	if err != nil {
+		return err
+	}
+
+	if data.PackageManagers == nil {
+		return nil
+	}
+
+	packages := data.PackageManagers[packageManagerName]
+	if index := slices.Index(packages, packageName); index != -1 {
+		data.PackageManagers[packageManagerName] = slices.Delete(packages, index, index+1)
+		return savePackageData(data)
+	}
+
+	return nil
+}
+
+func getPackageManager() []string {
+	cmd := exec.Command("sh", "-c", `grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '\n'`)
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("Error detecting distro: %v", err)
+		return []string{}
+	}
+
+	distroName := strings.TrimSpace(string(output))
+
+	switch distroName {
+	case "fedora":
+		return []string{"dnf"}
+	case "ubuntu", "linuxmint":
+		return []string{"apt"}
+	case "arch":
+		return []string{"pacman"}
+	default:
+		log.Printf("Unknown distro: %s", distroName)
+		return []string{}
+	}
+}
+
+func getCommand(action string, packageManagerNames []string) string {
+	if len(packageManagerNames) == 0 {
+		return ""
+	}
+
+	var commands []string
+
+	for _, pmName := range packageManagerNames {
+		pm, exists := packageManagers[pmName]
+		if !exists {
+			continue
+		}
+
+		actionCmd, exists := pm.commands[action]
+		if !exists {
+			continue
+		}
+
+		var cmd string
+		if pm.needsSudo {
+			cmd = "sudo " + pm.name + " " + actionCmd
+		} else {
+			cmd = pm.name + " " + actionCmd
+		}
+
+		commands = append(commands, cmd)
+	}
+
+	return strings.Join(commands, " && ")
+}
+
+func executeCommand(commandParts []string) error {
+	if len(commandParts) == 0 {
+		return fmt.Errorf("no command to execute")
+	}
+
+	cmd := exec.Command(commandParts[0], commandParts[1:]...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	return cmd.Run()
+}
+
+func runCommand(app *cli.Command) error {
+	packageName := app.Args().Get(0)
+	if packageName == "" && app.Name != "update" {
+		return fmt.Errorf("package name is required")
+	}
+
+	var packageManagerNames []string
+
+	switch {
+	case app.Bool("flatpak"):
+		packageManagerNames = []string{"flatpak"}
+	case app.Bool("update-all"):
+		packageManagerNames = append(getPackageManager(), "flatpak")
+	default:
+		packageManagerNames = getPackageManager()
+	}
+
+	if len(packageManagerNames) == 0 {
+		return fmt.Errorf("no package manager detected")
+	}
+
+	command := getCommand(app.Name, packageManagerNames)
+	if command == "" {
+		return fmt.Errorf("unsupported action or package manager")
+	}
+
+	var commandParts []string
+	if packageName != "" {
+		commandParts = append(strings.Fields(command), packageName)
+	} else {
+		commandParts = strings.Fields(command)
+	}
+
+	if err := executeCommand(commandParts); err != nil {
+		return fmt.Errorf("command execution failed: %w", err)
+	}
+
 	switch app.Name {
 	case "install":
-		writeToFile(packageManager, packageName)
+		if packageName != "" {
+			if err := addPackageToFile(packageManagerNames[0], packageName); err != nil {
+				fmt.Printf("Warning: failed to track package: %v\n", err)
+			}
+		}
 	case "remove":
-	case "update":
+		if packageName != "" {
+			if err := removePackageFromFile(packageManagerNames[0], packageName); err != nil {
+				fmt.Printf("Warning: failed to untrack package: %v\n", err)
+			}
+		}
 	}
 
 	return nil
 }
 
 func getPackageFilePath() (string, error) {
-	configDir := makeDir()
-
-	return filepath.Join(configDir, "package.json"), nil
-}
-
-func makeDir() string {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		panic(err)
+		return "", fmt.Errorf("getting home directory: %w", err)
 	}
 
 	configDir := filepath.Join(homeDir, ".config", "pakt")
-
-	if _, err := os.Stat(configDir); os.IsNotExist(err) {
-		err = os.MkdirAll(configDir, 0755)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	return configDir
+	return filepath.Join(configDir, "package.json"), nil
 }
