@@ -65,7 +65,7 @@ var packageManagers = map[string]PackageManager{
 		name:      "nix",
 		needsSudo: false,
 		commands: map[string]string{
-			"install": "profile install",
+			"install": "profile add nixpkgs#",
 			"remove":  "profile remove",
 			"update":  "profile upgrade --all",
 		},
@@ -326,6 +326,8 @@ func runCommand(app *cli.Command) error {
 	switch {
 	case app.Bool("flatpak"):
 		packageManagerNames = []string{"flatpak"}
+	case app.Bool("nix"):
+		packageManagerNames = []string{"nix"}
 	case app.Bool("update-all"):
 		packageManagerNames = append(getPackageManager(), "flatpak")
 	default:
@@ -342,8 +344,15 @@ func runCommand(app *cli.Command) error {
 	}
 
 	var commandParts []string
+
 	if packageName != "" {
-		commandParts = append(strings.Fields(command), packageName)
+		if packageManagerNames[0] == "nix" && app.Name == "install" {
+			nixCmd := strings.Fields(command)
+			nixCmd[len(nixCmd)-1] = nixCmd[len(nixCmd)-1] + packageName
+			commandParts = nixCmd
+		} else {
+			commandParts = append(strings.Fields(command), packageName)
+		}
 	} else {
 		commandParts = strings.Fields(command)
 	}
