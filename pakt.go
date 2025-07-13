@@ -61,6 +61,15 @@ var packageManagers = map[string]PackageManager{
 			"update":  "update",
 		},
 	},
+	"nix": {
+		name:      "nix",
+		needsSudo: false,
+		commands: map[string]string{
+			"install": "profile install",
+			"remove":  "profile remove",
+			"update":  "profile upgrade --all",
+		},
+	},
 }
 
 func main() {
@@ -72,6 +81,11 @@ func main() {
 				Name:    "flatpak",
 				Aliases: []string{"f"},
 				Usage:   "set package manager to flatpak",
+			},
+			&cli.BoolFlag{
+				Name:    "nix",
+				Aliases: []string{"n"},
+				Usage:   "set package manager to nix",
 			},
 			&cli.BoolFlag{
 				Name:    "update-all",

@@ -31,4 +31,12 @@ func TestGetCommand(t *testing.T) {
 	assert.Equal("sudo pacman -S && flatpak install", getCommand("install", []string{"pacman", "flatpak"}))
 	assert.Equal("sudo pacman -Syu && flatpak update", getCommand("update", []string{"pacman", "flatpak"}))
 	assert.Equal("sudo pacman -R && flatpak remove", getCommand("remove", []string{"pacman", "flatpak"}))
+
+	assert.Equal("nix profile install", getCommand("install", []string{"nix"}))
+	assert.Equal("nix profile upgrade --all", getCommand("update", []string{"nix"}))
+	assert.Equal("nix profile remove", getCommand("remove", []string{"nix"}))
+
+	assert.Equal("nix profile install && flatpak install", getCommand("install", []string{"nix", "flatpak"}))
+	assert.Equal("nix profile upgrade --all && flatpak update", getCommand("update", []string{"nix", "flatpak"}))
+	assert.Equal("nix profile remove && flatpak remove", getCommand("remove", []string{"nix", "flatpak"}))
 }
